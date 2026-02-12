@@ -66,18 +66,26 @@ func main() {
 	db := config.ConnectDB()
 
 	// --- Auto Create First Admin ---
-	var count int64
-	db.Model(&models.User{}).Count(&count)
-	if count == 0 {
+	var adminCount int64
+	// ค้นหาเฉพาะคนที่มี Role = "admin"
+	db.Model(&models.User{}).Where("role = ?", "admin").Count(&adminCount)
+
+	// ถ้าไม่มี Admin เลยสักคน (adminCount == 0) ให้สร้าง root_admin
+	if adminCount == 0 {
 		hashedPw, _ := utils.HashPassword("admin1234")
 		firstAdmin := models.User{
 			Username: "root_admin",
 			Password: hashedPw,
-			Role:     "admin",
+			Role:     "admin", // กำหนดสิทธิ์สูงสุด
 			APIKey:   uuid.New().String(),
 		}
 		db.Create(&firstAdmin)
-		fmt.Println("!!! FIRST ADMIN CREATED !!! Key:", firstAdmin.APIKey)
+		fmt.Println("==================================================")
+		fmt.Println("⚠️  NO ADMIN FOUND -> CREATED ROOT ADMIN")
+		fmt.Printf("Username: %s\n", firstAdmin.Username)
+		fmt.Printf("Password: admin1234\n")
+		fmt.Printf("API Key:  %s\n", firstAdmin.APIKey)
+		fmt.Println("==================================================")
 	}
 
 	r := gin.Default()
