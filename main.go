@@ -121,7 +121,7 @@ func main() {
 	// Run Server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "0000"
 	}
 	r.Run(":" + port)
 }
