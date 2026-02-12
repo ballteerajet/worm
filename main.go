@@ -108,6 +108,19 @@ func main() {
 		controllers.GetAllUsersHandler(c, db)
 	})
 
+	// Update User (Admin Only)
+	protected.PUT("/users/:id", func(c *gin.Context) {
+		// เช็คว่าเป็น Admin
+		requester := c.MustGet("user").(*models.User)
+		if requester.Role != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin only"})
+			return
+		}
+		
+		// เรียก Controller
+		controllers.UpdateUserHandler(c, db)
+	})
+
 	// 3. Sensor POST (All Users)
 	protected.POST("/sensor", func(c *gin.Context) {
 		controllers.AddSensorHandler(c, db)
