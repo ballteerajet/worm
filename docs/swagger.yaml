@@ -1,4 +1,77 @@
 basePath: /api
+definitions:
+  controllers.RegisterRequest:
+    properties:
+      password:
+        example: pass1234
+        type: string
+      role:
+        description: admin หรือ user
+        example: user
+        type: string
+      username:
+        example: staff01
+        type: string
+    required:
+    - password
+    - role
+    - username
+    type: object
+  controllers.SensorRequest:
+    properties:
+      humidity:
+        example: 60
+        type: number
+      temp:
+        example: 32.5
+        type: number
+    type: object
+  main.LoginRequest:
+    properties:
+      password:
+        example: admin1234
+        type: string
+      username:
+        example: root_admin
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  models.SensorData:
+    properties:
+      created_at:
+        type: string
+      humidity:
+        example: 60
+        type: number
+      id:
+        description: ทำเหมือนกัน
+        type: integer
+      temp:
+        example: 32.5
+        type: number
+    type: object
+  models.User:
+    properties:
+      api_key:
+        type: string
+      created_at:
+        type: string
+      id:
+        description: ลบ gorm.Model ทิ้ง แล้วใส่ 3 บรรทัดนี้แทน
+        example: 1
+        type: integer
+      role:
+        example: user
+        type: string
+      updated_at:
+        type: string
+      username:
+        description: Fields เดิมของคุณ
+        example: staff01
+        type: string
+    type: object
 host: worm-bwqp.onrender.com
 info:
   contact:
@@ -11,7 +84,139 @@ info:
   termsOfService: http://swagger.io/terms/
   title: IoT Sensor API
   version: "1.0"
-paths: {}
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: ส่ง Username/Password เพื่อรับ API Key
+      parameters:
+      - description: Login Credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: เข้าสู่ระบบ (Login)
+      tags:
+      - Auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: สร้าง User หรือ Admin ใหม่ โดยต้องใช้ Key ของ Admin
+      parameters:
+      - description: ข้อมูล User ใหม่
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: สร้าง User ใหม่ (Admin Only)
+      tags:
+      - Auth
+  /sensor:
+    get:
+      description: ดึงข้อมูลอุณหภูมิและความชื้นทั้งหมด
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.SensorData'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: ดูประวัติ Sensor
+      tags:
+      - Sensor
+    post:
+      consumes:
+      - application/json
+      description: รับค่า temp และ humidity แล้วบันทึกลงฐานข้อมูล
+      parameters:
+      - description: ข้อมูล Sensor
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.SensorRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'message: Saved'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 'error: Bad Request'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: บันทึกค่าอุณหภูมิและความชื้น
+      tags:
+      - Sensor
+  /users:
+    get:
+      description: แสดงรายชื่อ User และ Role ทั้งหมด (Admin Only)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.User'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: ดูรายชื่อ User ทั้งหมด
+      tags:
+      - Auth
 securityDefinitions:
   ApiKeyAuth:
     in: header
