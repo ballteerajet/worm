@@ -1,10 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
-	"worm/config"     // เปลี่ยนเป็นชื่อ module คุณ
+	"worm/config"
 	"worm/controllers"
 	"worm/middleware"
 	"worm/models"
@@ -12,83 +13,190 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	// Import Swagger
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	// Import Docs ที่จะถูกสร้าง (เปลี่ยน 'worm' เป็นชื่อ module ของคุณถ้าไม่ใช่)
+	_ "worm/docs"
 )
 
+// --- Structs สำหรับ Swagger (ต้องประกาศข้างนอกเพื่อให้ Swagger เห็น) ---
+
+// RegisterRequest โมเดลรับข้อมูลสมัครสมาชิก
+type RegisterRequest struct {
+	Username string `json:"username" example:"staff01" binding:"required"`
+	Password string `json:"password" example:"123456" binding:"required"`
+	Role     string `json:"role" example:"user" binding:"required"` // admin หรือ user
+}
+
+// SensorRequest โมเดลรับข้อมูล Sensor
+type SensorRequest struct {
+	Temp     float64 `json:"temp" example:"32.5" binding:"required"`
+	Humidity float64 `json:"humidity" example:"60.0" binding:"required"`
+}
+
+// --- Main Setup ---
+
+// @title           IoT Sensor API
+// @version         1.0
+// @description     ระบบ API สำหรับจัดการ User และข้อมูล Sensor
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name    API Support
+// @contact.email   support@swagger.io
+
+// @license.name    Apache 2.0
+// @license.url     http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host            worm-bwqp.onrender.com
+// @BasePath        /api
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-KEY
 func main() {
-	// 1. เชื่อมต่อ DB
 	db := config.ConnectDB()
 
-	// 2. เริ่มต้น Web Server (Gin)
-	r := gin.Default()
-
-	// --- Route สำหรับ Login / Register (ไม่ต้องใช้ Middleware) ---
-	r.POST("/register", func(c *gin.Context) {
-		var json struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err := c.ShouldBindJSON(&json); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// สร้าง User ใหม่
-		hashedPw, _ := utils.HashPassword(json.Password)
-		newUser := models.User{
-			Username: json.Username,
+	// --- Auto Create First Admin ---
+	var count int64
+	db.Model(&models.User{}).Count(&count)
+	if count == 0 {
+		hashedPw, _ := utils.HashPassword("admin1234")
+		firstAdmin := models.User{
+			Username: "root_admin",
 			Password: hashedPw,
-			Role:     "user",
+			Role:     "admin",
 			APIKey:   uuid.New().String(),
 		}
+		db.Create(&firstAdmin)
+		fmt.Println("!!! FIRST ADMIN CREATED !!! Key:", firstAdmin.APIKey)
+	}
 
-		if err := db.Create(&newUser).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Username might already exist"})
-			return
-		}
+	r := gin.Default()
 
-		c.JSON(http.StatusOK, gin.H{"message": "User created", "api_key": newUser.APIKey})
+	// --- Route สำหรับ Swagger ---
+	// เข้าผ่าน: /swagger/index.html
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Redirect หน้าแรกไป Swagger เลย
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
 	})
 
-	// --- Route ที่ต้องใช้ API Key (Protected) ---
 	protected := r.Group("/api")
 	protected.Use(func(c *gin.Context) {
-		// Middleware แบบบ้านๆ สำหรับ Gin
-		apiKey := c.GetHeader("X-API-KEY") // รับ Key จาก Header
+		apiKey := c.GetHeader("X-API-KEY")
 		user, err := middleware.Authenticate(db, apiKey, "user")
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			return
 		}
-		// เก็บ user ไว้ใน context เผื่อใช้ต่อ
 		c.Set("user", user)
 		c.Next()
 	})
 
-	// POST: ส่งข้อมูล Sensor
-	protected.POST("/sensor", func(c *gin.Context) {
-		var json struct {
-			Temp     float64 `json:"temp"`
-			Humidity float64 `json:"humidity"`
+	// ---------------- API ROUTES ----------------
+
+	// RegisterHandler
+	// @Summary      สร้าง User ใหม่
+	// @Description  สร้าง User หรือ Admin (เฉพาะ Admin เท่านั้นที่ใช้ได้)
+	// @Tags         Auth
+	// @Accept       json
+	// @Produce      json
+	// @Security     ApiKeyAuth
+	// @Param        request body RegisterRequest true "User Info"
+	// @Success      200  {object} map[string]interface{}
+	// @Failure      403  {object} map[string]string
+	// @Router       /register [post]
+	protected.POST("/register", func(c *gin.Context) {
+		requester := c.MustGet("user").(*models.User)
+		if requester.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin only"})
+			return
 		}
-		if err := c.ShouldBindJSON(&json); err != nil {
+
+		var req RegisterRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		controllers.AddSensorData(db, json.Temp, json.Humidity)
-		c.JSON(http.StatusOK, gin.H{"message": "Data saved"})
+		if req.Role != "admin" && req.Role != "user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Role must be 'admin' or 'user'"})
+			return
+		}
+
+		hashedPw, _ := utils.HashPassword(req.Password)
+		newUser := models.User{
+			Username: req.Username,
+			Password: hashedPw,
+			Role:     req.Role,
+			APIKey:   uuid.New().String(),
+		}
+
+		if err := db.Create(&newUser).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Username taken"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Created", "user": newUser})
 	})
 
-	// GET: ดูข้อมูล Sensor
+	// GetUsersHandler
+	// @Summary      ดูรายชื่อ User ทั้งหมด
+	// @Description  ดึงข้อมูล User ทั้งหมดในระบบ (เฉพาะ Admin)
+	// @Tags         Auth
+	// @Produce      json
+	// @Security     ApiKeyAuth
+	// @Success      200  {object} map[string]interface{}
+	// @Router       /users [get]
+	protected.GET("/users", func(c *gin.Context) {
+		requester := c.MustGet("user").(*models.User)
+		if requester.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin only"})
+			return
+		}
+		users, _ := controllers.GetAllUsers(db)
+		c.JSON(http.StatusOK, gin.H{"users": users})
+	})
+
+	// AddSensorHandler
+	// @Summary      ส่งค่า Sensor
+	// @Description  บันทึกค่าอุณหภูมิและความชื้น
+	// @Tags         Sensor
+	// @Accept       json
+	// @Produce      json
+	// @Security     ApiKeyAuth
+	// @Param        request body SensorRequest true "Sensor Data"
+	// @Success      200  {object} map[string]string
+	// @Router       /sensor [post]
+	protected.POST("/sensor", func(c *gin.Context) {
+		var req SensorRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		controllers.AddSensorData(db, req.Temp, req.Humidity)
+		c.JSON(http.StatusOK, gin.H{"message": "Saved"})
+	})
+
+	// GetSensorHandler
+	// @Summary      ดูข้อมูล Sensor
+	// @Description  ดูประวัติค่าอุณหภูมิทั้งหมด
+	// @Tags         Sensor
+	// @Produce      json
+	// @Security     ApiKeyAuth
+	// @Success      200  {object} map[string]interface{}
+	// @Router       /sensor [get]
 	protected.GET("/sensor", func(c *gin.Context) {
 		data, _ := controllers.GetAllSensorData(db)
 		c.JSON(http.StatusOK, gin.H{"data": data})
 	})
 
-	// 3. รัน Server (รองรับ Port ของ Render)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "0000" // Default สำหรับรันในเครื่อง
+		port = "0000"
 	}
 	r.Run(":" + port)
 }
