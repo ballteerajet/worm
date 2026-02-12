@@ -24,6 +24,12 @@ import (
 
 // --- Structs สำหรับ Swagger (ต้องประกาศข้างนอกเพื่อให้ Swagger เห็น) ---
 
+// LoginRequest โมเดลสำหรับ Login
+type LoginRequest struct {
+	Username string `json:"username" example:"root_admin" binding:"required"`
+	Password string `json:"password" example:"admin1234" binding:"required"`
+}
+
 // RegisterRequest โมเดลรับข้อมูลสมัครสมาชิก
 type RegisterRequest struct {
 	Username string `json:"username" example:"staff01" binding:"required"`
@@ -75,6 +81,47 @@ func main() {
 	}
 
 	r := gin.Default()
+
+	// LoginHandler
+	// @Summary      เข้าสู่ระบบ (Login)
+	// @Description  ส่ง Username/Password เพื่อรับ API Key
+	// @Tags         Auth
+	// @Accept       json
+	// @Produce      json
+	// @Param        request body LoginRequest true "Login Credentials"
+	// @Success      200  {object} map[string]string
+	// @Failure      401  {object} map[string]string
+	// @Router       /login [post]
+	r.POST("/login", func(c *gin.Context) {
+		var req LoginRequest
+		
+		// 1. รับค่า JSON
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+			return
+		}
+
+		// 2. ค้นหา User ใน Database
+		var user models.User
+		if err := db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+			return
+		}
+
+		// 3. ตรวจสอบรหัสผ่าน (ใช้ฟังก์ชันจาก utils ที่เราเขียนไว้)
+		if !utils.CheckPasswordHash(req.Password, user.Password) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Incorrect password"})
+			return
+		}
+
+		// 4. ถ้าผ่านหมด ส่ง API Key กลับไป
+		c.JSON(http.StatusOK, gin.H{
+			"message":  "Login successful",
+			"username": user.Username,
+			"role":     user.Role,
+			"api_key":  user.APIKey, // <--- พระเอกของเราอยู่นี่
+		})
+	})
 
 	// --- Route สำหรับ Swagger ---
 	// เข้าผ่าน: /swagger/index.html

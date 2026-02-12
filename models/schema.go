@@ -24,3 +24,4 @@ type SensorData struct {
 	Humidity    float64   `gorm:"not null"`
 	CreatedAt   time.Time // Auto timestamp
 }
+
