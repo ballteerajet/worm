@@ -34,3 +34,13 @@ func CreateUser(db *gorm.DB, adminAPIKey string, newUsername, newPassword, role 
 
 	return generatedKey, nil
 }
+
+// GetAllUsers ดึงข้อมูล User ทั้งหมดจาก Database
+func GetAllUsers(db *gorm.DB) ([]models.User, error) {
+	var users []models.User
+	
+	// ใช้คำสั่ง Find ของ GORM เพื่อดึงข้อมูลทั้งหมดในตาราง users
+	result := db.Find(&users)
+	
+	return users, result.Error
+}
