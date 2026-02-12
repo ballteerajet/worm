@@ -88,7 +88,7 @@ func main() {
 	// 3. รัน Server (รองรับ Port ของ Render)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // Default สำหรับรันในเครื่อง
+		port = "0000" // Default สำหรับรันในเครื่อง
 	}
 	r.Run(":" + port)
 }
