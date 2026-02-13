@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
+    "github.com/gin-contrib/cors"
 
 	"worm/config"
 	"worm/controllers"
@@ -58,6 +60,16 @@ func main() {
 
 	// 3. เริ่มต้น Router
 	r := gin.Default()
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"}, // อนุญาตทุก origin (สำหรับ dev)
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "X-API-KEY"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 
 	// --- Public Routes ---
 
